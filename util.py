@@ -78,21 +78,22 @@ def recognize(img, db_path):
     else:
         embeddings_unknown = embeddings_unknown[0]
 
-    db_dir = sorted(os.listdir(db_path))
+    db_dir = sorted([f for f in os.listdir(db_path) if f.endswith('.pickle')])
 
-    match = False
-    j = 0
-    while not match and j < len(db_dir):
-        path_ = os.path.join(db_path, db_dir[j])
+    best_match_name = 'unknown_person'
+    min_distance = 0.5  # Tolerance threshold (Lower is stricter)
 
-        file = open(path_, 'rb')
-        embeddings = pickle.load(file)
+    for filename in db_dir:
+        path_ = os.path.join(db_path, filename)
+        with open(path_, 'rb') as file:
+            known_embeddings = pickle.load(file)
+            
+            # Calculate distance (lower means more similar)
+            distances = face_recognition.face_distance([known_embeddings], embeddings_unknown)
+            
+            if distances[0] < min_distance:
+                min_distance = distances[0]
+                best_match_name = filename[:-7]
 
-        match = face_recognition.compare_faces([embeddings], embeddings_unknown)[0]
-        j += 1
-
-    if match:
-        return db_dir[j - 1][:-7]
-    else:
-        return 'unknown_person'
+    return best_match_name
 

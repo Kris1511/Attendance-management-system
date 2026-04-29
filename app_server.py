@@ -57,20 +57,27 @@ def recognize_face(frame):
         return None
     
     unknown_encoding = encodings[0]
-    
     db_files = [f for f in os.listdir(DB_DIR) if f.endswith('.pickle')]
+    
+    best_match = "unknown"
+    min_distance = 0.5 # Stricter threshold
     
     for filename in db_files:
         with open(os.path.join(DB_DIR, filename), 'rb') as f:
             known_encoding = pickle.load(f)
-            results = face_recognition.compare_faces([known_encoding], unknown_encoding)
-            if results[0]:
-                return filename.replace('.pickle', '')
+            distance = face_recognition.face_distance([known_encoding], unknown_encoding)[0]
+            
+            if distance < min_distance:
+                min_distance = distance
+                best_match = filename.replace('.pickle', '')
     
-    return "unknown"
+    return best_match
 
 @app.post("/register")
 async def register(name: str = Form(...), image: str = Form(...)):
+    if os.path.exists(os.path.join(DB_DIR, f"{name}.pickle")):
+        raise HTTPException(status_code=400, detail="User already registered!")
+        
     frame = decode_image(image)
     rgb_img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     encodings = face_recognition.face_encodings(rgb_img)
@@ -91,7 +98,10 @@ async def attendance(image: str = Form(...), action: str = Form(...)):
     name = recognize_face(frame)
     
     if not name or name == "unknown":
-        return {"status": "error", "message": "Face not recognized."}
+        # Log unauthorized attempt
+        with open(LOG_PATH, 'a') as f:
+            f.write('UNKNOWN_USER,{},attempt_{}\n'.format(datetime.datetime.now(), action))
+        return {"status": "error", "message": "Face not recognized. Attempt logged."}
     
     with open(LOG_PATH, 'a') as f:
         f.write('{},{},{}\n'.format(name, datetime.datetime.now(), action))

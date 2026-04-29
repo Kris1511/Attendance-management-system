@@ -178,6 +178,10 @@ class App:
             util.msg_box('Error', 'No image captured. Please try again.')
             return
 
+        if os.path.exists(os.path.join(self.db_dir, f'{name}.pickle')):
+            util.msg_box('Error', 'User already registered!')
+            return
+
         frame = self.register_new_user_capture
 
         if frame is None or frame.size == 0:
