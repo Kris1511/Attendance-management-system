@@ -9,6 +9,8 @@ import face_recognition
 import numpy as np
 
 import util
+from util import db
+
 # from test import test
 
 
@@ -78,15 +80,17 @@ class App:
 
         if label == 1:
 
-            name = util.recognize(self.most_recent_capture_arr, self.db_dir)
+            match = util.recognize(self.most_recent_capture_arr, self.db_dir)
 
-            if name in ['unknown_person', 'no_persons_found']:
+            if match == 'no_match':
                 util.msg_box('Ups...', 'Unknown user. Please register new user or try again.')
             else:
-                util.msg_box('Welcome back !', 'Welcome, {}.'.format(name))
-                with open(self.log_path, 'a') as f:
-                    f.write('{},{},in\n'.format(name, datetime.datetime.now()))
-                    f.close()
+                user_id = match['user_id']
+                name = match['name']
+                util.msg_box('Welcome back !', 'Welcome, {} (ID: {}).'.format(name, user_id))
+                db.log_attendance(user_id, name, 'in')
+
+
 
         else:
             util.msg_box('Hey, you are a spoofer!', 'You are fake !')
@@ -106,15 +110,17 @@ class App:
         label = 1 
 
         if label == 1:
-            name = util.recognize(self.most_recent_capture_arr, self.db_dir)
+            match = util.recognize(self.most_recent_capture_arr, self.db_dir)
 
-            if name in ['unknown_person', 'no_persons_found']:
+            if match == 'no_match':
                 util.msg_box('Ups...', 'Unknown user. Please register new user or try again.')
             else:
-                util.msg_box('Hasta la vista !', 'Goodbye, {}.'.format(name))
-                with open(self.log_path, 'a') as f:
-                    f.write('{},{},out\n'.format(name, datetime.datetime.now()))
-                    f.close()
+                user_id = match['user_id']
+                name = match['name']
+                util.msg_box('Hasta la vista !', 'Goodbye, {} (ID: {}).'.format(name, user_id))
+                db.log_attendance(user_id, name, 'out')
+
+
 
         else:
             util.msg_box('Hey, you are a spoofer!', 'You are fake !')
@@ -136,10 +142,15 @@ class App:
         self.add_img_to_label(self.capture_label)
 
         self.entry_text_register_new_user = util.get_entry_text(self.register_new_user_window)
-        self.entry_text_register_new_user.place(x=750, y=150)
+        self.entry_text_register_new_user.place(x=750, y=100)
+        self.text_label_register_new_user = util.get_text_label(self.register_new_user_window, 'Full Name:')
+        self.text_label_register_new_user.place(x=750, y=50)
 
-        self.text_label_register_new_user = util.get_text_label(self.register_new_user_window, 'Please, \ninput username:')
-        self.text_label_register_new_user.place(x=750, y=70)
+        self.entry_id_register_new_user = util.get_entry_text(self.register_new_user_window)
+        self.entry_id_register_new_user.place(x=750, y=210)
+        self.text_id_label_register_new_user = util.get_text_label(self.register_new_user_window, 'User ID:')
+        self.text_id_label_register_new_user.place(x=750, y=160)
+
 
     def try_again_register_new_user(self):
         self.register_new_user_window.destroy()
@@ -169,10 +180,12 @@ class App:
 
     def accept_register_new_user(self):
         name = self.entry_text_register_new_user.get(1.0, "end-1c").strip()
+        user_id = self.entry_id_register_new_user.get(1.0, "end-1c").strip()
 
-        if not name:
-            util.msg_box('Error', 'Please enter a username.')
+        if not name or not user_id:
+            util.msg_box('Error', 'Please enter both Name and User ID.')
             return
+
 
         if not hasattr(self, 'register_new_user_capture') or self.register_new_user_capture is None:
             util.msg_box('Error', 'No image captured. Please try again.')
@@ -220,12 +233,16 @@ class App:
         embeddings = encodings[0]
 
         try:
-            with open(os.path.join(self.db_dir, f'{name}.pickle'), 'wb') as file:
-                pickle.dump(embeddings, file)
-            util.msg_box('Success!', 'User registered successfully!')
-            self.register_new_user_window.destroy()
+            success = db.register_user(user_id, name, embeddings)
+            if success:
+                util.msg_box('Success!', 'User registered successfully!')
+                self.register_new_user_window.destroy()
+            else:
+                util.msg_box('Error', 'User ID already exists or database error.')
+
         except Exception as e:
             util.msg_box('Error', f'Error saving user data: {str(e)}')
+
 
 
 if __name__ == "__main__":

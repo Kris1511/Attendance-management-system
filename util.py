@@ -1,11 +1,12 @@
-import os
-import pickle
-
 import tkinter as tk
 from tkinter import messagebox
 import face_recognition
 import cv2
 import numpy as np
+from db_manager import DatabaseManager
+
+db = DatabaseManager()
+
 
 
 def get_button(window, text, color, command, fg='white'):
@@ -63,10 +64,6 @@ def recognize(img, db_path):
     # Ensure array is C-contiguous and uint8 for dlib
     rgb_img = np.ascontiguousarray(rgb_img, dtype='uint8')
 
-    print(f"DEBUG RECOGNIZE: rgb_img type: {type(rgb_img)}")
-    print(f"DEBUG RECOGNIZE: rgb_img shape: {rgb_img.shape}")
-    print(f"DEBUG RECOGNIZE: rgb_img dtype: {rgb_img.dtype}")
-
     try:
         embeddings_unknown = face_recognition.face_encodings(rgb_img)
     except Exception as e:
@@ -78,22 +75,20 @@ def recognize(img, db_path):
     else:
         embeddings_unknown = embeddings_unknown[0]
 
-    db_dir = sorted([f for f in os.listdir(db_path) if f.endswith('.pickle')])
+    known_users = db.get_all_users()
 
-    best_match_name = 'unknown_person'
+    best_match = None
     min_distance = 0.5  # Tolerance threshold (Lower is stricter)
 
-    for filename in db_dir:
-        path_ = os.path.join(db_path, filename)
-        with open(path_, 'rb') as file:
-            known_embeddings = pickle.load(file)
-            
-            # Calculate distance (lower means more similar)
-            distances = face_recognition.face_distance([known_embeddings], embeddings_unknown)
-            
-            if distances[0] < min_distance:
-                min_distance = distances[0]
-                best_match_name = filename[:-7]
+    for user in known_users:
+        # Calculate distance (lower means more similar)
+        distances = face_recognition.face_distance([user['encoding']], embeddings_unknown)
+        
+        if distances[0] < min_distance:
+            min_distance = distances[0]
+            best_match = {'user_id': user['user_id'], 'name': user['name']}
 
-    return best_match_name
+    return best_match if best_match else 'no_match'
+
+
 

@@ -12,6 +12,10 @@ import uvicorn
 import base64
 from PIL import Image
 import io
+from db_manager import DatabaseManager
+
+db = DatabaseManager()
+
 
 app = FastAPI()
 
@@ -57,27 +61,24 @@ def recognize_face(frame):
         return None
     
     unknown_encoding = encodings[0]
-    db_files = [f for f in os.listdir(DB_DIR) if f.endswith('.pickle')]
+    known_users = db.get_all_users()
     
-    best_match = "unknown"
+    best_match = None
     min_distance = 0.5 # Stricter threshold
     
-    for filename in db_files:
-        with open(os.path.join(DB_DIR, filename), 'rb') as f:
-            known_encoding = pickle.load(f)
-            distance = face_recognition.face_distance([known_encoding], unknown_encoding)[0]
-            
-            if distance < min_distance:
-                min_distance = distance
-                best_match = filename.replace('.pickle', '')
+    for user in known_users:
+        distance = face_recognition.face_distance([user['encoding']], unknown_encoding)[0]
+        
+        if distance < min_distance:
+            min_distance = distance
+            best_match = {'user_id': user['user_id'], 'name': user['name']}
     
     return best_match
 
+
+
 @app.post("/register")
-async def register(name: str = Form(...), image: str = Form(...)):
-    if os.path.exists(os.path.join(DB_DIR, f"{name}.pickle")):
-        raise HTTPException(status_code=400, detail="User already registered!")
-        
+async def register(user_id: str = Form(...), name: str = Form(...), image: str = Form(...)):
     frame = decode_image(image)
     rgb_img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     encodings = face_recognition.face_encodings(rgb_img)
@@ -86,32 +87,37 @@ async def register(name: str = Form(...), image: str = Form(...)):
         raise HTTPException(status_code=400, detail="No face detected in the image.")
     
     encoding = encodings[0]
-    with open(os.path.join(DB_DIR, f"{name}.pickle"), 'wb') as f:
-        pickle.dump(encoding, f)
+    success = db.register_user(user_id, name, encoding)
     
-    return {"status": "success", "message": f"User {name} registered successfully."}
+    if not success:
+        raise HTTPException(status_code=400, detail="User ID already exists or database error.")
+    
+    return {"status": "success", "message": f"User {name} (ID: {user_id}) registered successfully."}
+
+
 
 @app.post("/attendance")
 async def attendance(image: str = Form(...), action: str = Form(...)):
     # action should be 'in' or 'out'
     frame = decode_image(image)
-    name = recognize_face(frame)
+    match = recognize_face(frame)
     
-    if not name or name == "unknown":
-        # Log unauthorized attempt
-        with open(LOG_PATH, 'a') as f:
-            f.write('UNKNOWN_USER,{},attempt_{}\n'.format(datetime.datetime.now(), action))
-        return {"status": "error", "message": "Face not recognized. Attempt logged."}
+    if not match:
+        return {"status": "error", "message": "Face not recognized."}
     
-    with open(LOG_PATH, 'a') as f:
-        f.write('{},{},{}\n'.format(name, datetime.datetime.now(), action))
+    user_id = match['user_id']
+    name = match['name']
+    db.log_attendance(user_id, name, action)
     
     return {
         "status": "success", 
+        "user_id": user_id,
         "name": name, 
         "action": action,
         "message": f"Welcome {name}!" if action == "in" else f"Goodbye {name}!"
     }
+
+
 
 @app.get("/status")
 async def get_status():
